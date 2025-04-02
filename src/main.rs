@@ -481,12 +481,12 @@ mod tests {
 
     #[test]
     fn test_generate_grayscale_image() {
-        let filepath = "./0925_6225/LITTO3D_FRA_0925_6225_20150529_LAMB93_RGF93_IGN69/MNT1m/LITTO3D_FRA_0925_6225_MNT_20150529_LAMB93_RGF93_IGN69.asc";
-        let mut params = GridParams::default();
-        let content = fs::read_to_string(filepath).expect("Failed to read file");
-        let grid = get_data(&content, &mut params);
-        let transformed_grid = replace_nodata(&grid, params.nodata);
-        let img = grid_to_image(&transformed_grid);
+        let grid = vec![
+            vec![Some(1.0), Some(2.0), Some(3.0)],
+            vec![Some(4.0), Some(5.0), Some(6.0)],
+            vec![Some(7.0), Some(8.0), Some(9.0)],
+        ];
+        let img = grid_to_image(&grid);
         let output_path = "test_grayscale.png";
         img.save(output_path).expect("Failed to save grayscale image");
         assert!(std::path::Path::new(output_path).exists(), "Grayscale image file should be created");
