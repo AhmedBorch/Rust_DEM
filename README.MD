@@ -16,7 +16,7 @@ Unit tests are provided in the main.rs file to assure everything is running as e
 - Navigate to the root directory of the project in your terminal.
 - Run the following command, replacing `<input-asc-file>` with the absolute path to the ASC file that you want to visualize as a DEM image:
     ```bash
-    cargo run <input-asc-file>
+    cargo run -- <input-asc-file>
     ```
 - The program will process the file and generate the output PNG images in the same directory. The output images are named after the type of visualization: `grayscale.png`, `colored.png`, `gradient.png`.
 
