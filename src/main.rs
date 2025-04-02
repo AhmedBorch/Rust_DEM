@@ -189,7 +189,107 @@ fn grid_to_colored_image(grid: &Vec<Vec<Option<f32>>> )->RgbImage {
             image.put_pixel(x as u32, y as u32, pixel);
         }
     }
+
+    // Draw a black "X" every 50 cells
+    for y in (0..height).step_by(20) {
+        for x in (0..width).step_by(20) {
+            let radius = 2; // Size of the "X"
+            for offset in 0..=radius {
+                // Draw the diagonal from top-left to bottom-right
+                if x + offset < width && y + offset < height {
+                    image.put_pixel((x + offset) as u32, (y + offset) as u32, Rgb([0, 0, 0])); // Black
+                }
+                if x >= offset && y >= offset {
+                    image.put_pixel((x - offset) as u32, (y - offset) as u32, Rgb([0, 0, 0])); // Black
+                }
+
+                // Draw the diagonal from top-right to bottom-left
+                if x >= offset && y + offset < height {
+                    image.put_pixel((x - offset) as u32, (y + offset) as u32, Rgb([0, 0, 0])); // Black
+                }
+                if x + offset < width && y >= offset {
+                    image.put_pixel((x + offset) as u32, (y - offset) as u32, Rgb([0, 0, 0])); // Black
+                }
+            }
+
+            // Compute gradient and draw dashed line
+            draw_dashed_line(&mut image, &grid, x, y, cell_size);
+        }
+    }
+
     return image;
+}
+
+fn draw_dashed_line(
+    image: &mut RgbImage,
+    grid: &[Vec<Option<f32>>],
+    start_x: usize,
+    start_y: usize,
+    cell_size: f32,
+) {
+    let mut x = start_x;
+    let mut y = start_y;
+    let mut dash_on = true; // Toggle for dashed line
+    let mut iterations = 0; // Counter for iterations
+
+    loop {
+        // Check boundaries
+        if x == 0 || x >= grid[0].len() - 1 || y == 0 || y >= grid.len() - 1 {
+            break;
+        }
+
+        // Stop after 100 iterations
+        if iterations >= 10000 {
+            break;
+        }
+
+        // Get current value
+        let current_value = match grid[y][x] {
+            Some(value) => value,
+            None => break,
+        };
+
+        // Check if current cell is a local minimum
+        let neighbors = [
+            grid[y - 1][x],     // Top
+            grid[y + 1][x],     // Bottom
+            grid[y][x - 1],     // Left
+            grid[y][x + 1],     // Right
+            grid[y - 1][x - 1], // Top-left
+            grid[y - 1][x + 1], // Top-right
+            grid[y + 1][x - 1], // Bottom-left
+            grid[y + 1][x + 1], // Bottom-right
+        ];
+
+        if neighbors.iter().all(|&n| n.unwrap_or(f32::INFINITY) > current_value) {
+            break; // Stop at local minimum
+        }
+
+        // Compute gradient direction
+        let dzdx = (grid[y][x + 1].unwrap_or(current_value) - grid[y][x - 1].unwrap_or(current_value))
+            / (2.0 * cell_size);
+        let dzdy = (grid[y + 1][x].unwrap_or(current_value) - grid[y - 1][x].unwrap_or(current_value))
+            / (2.0 * cell_size);
+
+        let magnitude = (dzdx.powi(2) + dzdy.powi(2)).sqrt();
+        let direction_x = (-dzdx / magnitude).round() as isize;
+        let direction_y = (-dzdy / magnitude).round() as isize;
+
+        // Draw pixel if dash is "on"
+        if dash_on {
+            image.put_pixel(x as u32, y as u32, Rgb([255, 0, 0])); // Red dashed line
+        }
+
+        // Toggle dash
+        dash_on = !dash_on;
+
+        // Move to next cell in gradient direction
+        x = (x as isize + direction_x) as usize;
+        y = (y as isize + direction_y) as usize;
+
+        // Increment iteration counter
+        iterations += 1;
+    }
 }
 
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
