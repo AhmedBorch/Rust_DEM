@@ -390,7 +390,7 @@ fn main() {
             
             //save the greyscale image
             let img = grid_to_image(&transformed_grid);
-            img.save("greyscale.png").unwrap();
+            img.save("grayscale.png").unwrap();
             let (img_col,img_feature) = grid_to_colored_image(&transformed_grid,params.cellsize);
             img_col.save("colored.png").unwrap();
             img_feature.save("gradient.png").unwrap();
