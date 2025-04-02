@@ -411,11 +411,11 @@ mod tests {
         let mut params = GridParams::default();
         let content = fs::read_to_string(filepath).expect("Failed to read file");
         let grid = get_data(&content, &mut params);
-        let transformed_grid = replace_nodata(&grid);
-        let img = grid_to_colored_image(&transformed_grid);
-        let output_path = "test_colored.png";
-        img.save(output_path).expect("Failed to save image");
-        assert!(std::path::Path::new(output_path).exists(), "Output file should be created");
+        let transformed_grid = replace_nodata(&grid, params.nodata);
+        let img = grid_to_image(&transformed_grid);
+        let output_path = "test_grayscale.png";
+        img.save(output_path).expect("Failed to save grayscale image");
+        assert!(std::path::Path::new(output_path).exists(), "Grayscale image file should be created");
 
         // Clean up the output file
         fs::remove_file(output_path).expect("Failed to remove test output file");
@@ -428,7 +428,7 @@ mod tests {
             vec![Some(4.0), Some(5.0), Some(6.0)],
             vec![Some(7.0), Some(8.0), Some(9.0)],
         ];
-        let img = grid_to_colored_image(&grid);
+        let (img, _) = grid_to_colored_image(&grid, Some(1.0));
         let output_path = "test_colored_image.png";
         img.save(output_path).expect("Failed to save colored image");
         assert!(std::path::Path::new(output_path).exists(), "Colored image file should be created");
@@ -460,24 +460,13 @@ mod tests {
     }
 
     #[test]
-    fn test_find_max_position() {
-        let grid = vec![
-            vec![Some(1.0), Some(2.0), Some(3.0)],
-            vec![Some(4.0), Some(5.0), Some(6.0)],
-            vec![Some(7.0), Some(8.0), Some(9.0)],
-        ];
-        let max_pos = find_max_position(&grid);
-        assert_eq!(max_pos, Some((2, 2, 9.0)), "Max value should be at (2, 2) with value 9.0");
-    }
-
-    #[test]
     fn test_replace_nodata() {
         let grid = vec![
             vec![-99999.0, 2.0, 3.0],
             vec![4.0, -99999.0, 6.0],
             vec![7.0, 8.0, -99999.0],
         ];
-        let replaced_grid = replace_nodata(&grid);
+        let replaced_grid = replace_nodata(&grid, None);
         assert_eq!(
             replaced_grid,
             vec![
@@ -504,14 +493,5 @@ mod tests {
     fn test_hsl_to_rgb() {
         let (r, g, b) = hsl_to_rgb(0.0, 1.0, 0.5);
         assert_eq!((r, g, b), (255, 0, 0), "HSL(0, 1, 0.5) should convert to RGB(255, 0, 0)");
-    }
-
-    #[test]
-    fn test_transform_coordinates() {
-        let rows = 100;
-        let cols = 100;
-        let cellsize = 1.0;
-        transform_coordinates(rows, cols, cellsize);
-        // No assertion here, just ensuring the function runs without panicking
     }
 }
