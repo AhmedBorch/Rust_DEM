@@ -1,70 +1,88 @@
 use std::fs;
 use std::path::Path;
+use std::usize;
 use image::GrayImage;
 use image::Luma;
 use image::RgbImage;
 use image::Rgb;
+use proj4rs;
+use proj4rs::proj::Proj;
+use colorgrad::Gradient;
 
-fn get_data(content: &str) -> Vec<Vec<f32>> {
-    let mut grid: Vec<Vec<f32>> = Vec::new(); // This will store the grid
-    // let mut a = 0;
-    for line in content.lines().skip(6) { // Skip first 4 lines, start from 5th
-        // println!("{}", line);
-        // a = a+1;
-        // if a==3{
-        //     break;
-        // }
-        let row: Vec<f32> = line.split_whitespace() // Split the line by spaces
-            .filter_map(|s| s.parse::<f32>().ok()) // Parse each value into f32, ignore errors
-            .collect(); // Collect into a Vec<f32>
-        grid.push(row); // Add the row to the grid
+fn get_data(content: &str, params: &mut GridParams) -> Vec<Vec<f32>> {
+    // getting the grid parameters
+    let mut lines = content.lines();
+    for _ in 0..6 {
+        if let Some(line) = lines.next() {
+            let mut parts = line.split_whitespace();
+            match parts.next() {
+                Some("xllcenter") => params.x_begin = parts.next().and_then(|s| s.parse::<f64>().ok()),
+                Some("yllcenter") => params.y_begin = parts.next().and_then(|s| s.parse::<f64>().ok()),
+                Some("cellsize") => params.cellsize = parts.next().and_then(|s| s.parse::<f64>().ok()),
+                Some("nodata_value") => params.nodata = parts.next().and_then(|s| s.parse::<f64>().ok()),
+                _ => continue,
+            }
+        }
     }
-    // let grey_image = vec![1,2];
-    return grid
+
+    lines.map(|line| {
+        line.split_whitespace()
+            .filter_map(|s| s.parse::<f32>().ok())
+            .collect()
+    }).collect()
 }
 
-fn grid_to_image(grid: Vec<Vec<Option<f32>>> )->GrayImage {
-    let height = grid.len();
-    let width = if height > 0 { grid[0].len() } else { 0 };
+fn find_min(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
 
-    let mut image = GrayImage::new(width as u32, height as u32);
+    grid.iter()
+        .flatten()
+        .filter_map(|&x| x)
+        .reduce(f32::min)
+    
+}
 
-    let max_depth = find_min(&grid);
-    let min_depth = find_max(&grid);
+fn find_max(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
+    let mut max_val_x = 0.0;
+    let mut max_val_y = 0.0;
+    let mut max_elevation = 0.0;
 
-    let (max_val, min_val) = match (max_depth, min_depth) {
-        (Some(max), Some(min)) => (max, min),
-        _ => {
-            eprintln!("No valid data points. Returning blank image.");
-            return image;
-        }
-    };
+    grid.iter()
+        .flatten()
+        .filter_map(|&x| x)
+        .reduce(f32::max)
+}
 
-    for (y, row) in grid.iter().enumerate() {
-        for (x, value_opt) in row.iter().enumerate() {
-            let pixel_value = match value_opt {
-                Some(value) => {
-                    // Handle case where all values are the same
-                    let range = max_val - min_val;
-                    let normalized = if range.abs() < f32::EPSILON {
-                        0.0
-                    } else {
-                        (value - min_val) / range
-                    };
-                    let inverted = 1.0 - normalized;
-                    (inverted * 255.0).clamp(0.0, 255.0) as u8
+fn find_max_position(grid: &Vec<Vec<Option<f32>>>) -> Option<(usize, usize, f32)> {
+    let mut max_pos = None;
+    
+    for (row_idx, row) in grid.iter().enumerate() {
+        for (col_idx, &val) in row.iter().enumerate() {
+            if let Some(val) = val {
+                match max_pos {
+                    Some((_, _, current_max)) if val > current_max => {
+                        max_pos = Some((row_idx, col_idx, val));
+                    }
+                    None => {
+                        max_pos = Some((row_idx, col_idx, val));
+                    }
+                    _ => {}
                 }
-                None => 0u8, // No-data values are black
-            };
-
-            image.put_pixel(x as u32, y as u32, Luma([pixel_value]));
+            }
         }
     }
-    // println!("this is the deepeset point: {:?}",max_depth);
-    // println!("this is the sallowest point: {:?}",min_depth);
-    // let width = image.width() as usize;
-    // println!("Raw pixel data: {:?}", &image.as_raw()[..width]);
-    return image;
+    
+    max_pos
+}
+
+
+fn replace_nodata(grid: &Vec<Vec<f32>>) -> Vec<Vec<Option<f32>>> {
+    grid.iter()
+        .map(|row| {
+            row.iter()
+                .map(|&x| if (x + 99999.0).abs() < 0.0001 { None } else { Some(x) }) // Replace NaNs
+                .collect()
+        })
+        .collect()
 }
 
 fn compute_hillshade(
@@ -116,7 +134,7 @@ fn compute_hillshade(
 }
 
 
-fn grid_to_colored_image(grid: Vec<Vec<Option<f32>>> )->RgbImage {
+fn grid_to_colored_image(grid: &Vec<Vec<Option<f32>>> )->RgbImage {
     let height = grid.len();
     let width = if height > 0 { grid[0].len() } else { 0 };
 
@@ -195,40 +213,81 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     )
 }
 
-fn find_min(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
-    grid.iter()
-        .flatten()
-        .filter_map(|&x| x)
-        .reduce(f32::min)
+
+
+fn get_matrix_dimensions(matrix: &Vec<Vec<f32>>) -> (usize, usize) {
+    let rows = matrix.len();
+    let cols = matrix.first().map_or(0, |row| row.len());
+    (rows, cols)
 }
 
-fn find_max(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
-    grid.iter()
-        .flatten()
-        .filter_map(|&x| x)
-        .reduce(f32::max)
+// fn transform_coordinates(grid: &Vec<Vec<f32>>)-> Vec<Vec<f32>> {
+fn transform_coordinates(rows_len:usize , cols_len:usize, cellsize:f64 ){
+
+
+    let lambert93 = Proj::from_proj_string(
+        "+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+    ).unwrap();
+
+    let wgs84 = Proj::from_proj_string("+proj=longlat +datum=WGS84 +no_defs").unwrap();
+    // Example: Convert a point (X, Y) in Lambert-93 to (Lat, Lon) in WGS84
+    let xllcenter = 929000.0;  // Example X coordinate (meters)
+    let yllcenter = 6224001.0; // Example Y coordinate (meters)
+
+    // Calculate points (now using f64)
+    let mut points = [
+        (xllcenter, yllcenter),                          // origin
+        (xllcenter + (rows_len as f64) * cellsize, yllcenter),  // top
+        (xllcenter, yllcenter + (cols_len as f64) * cellsize),  // right
+        (xllcenter + (rows_len as f64) * cellsize,       // top-right
+         yllcenter + (cols_len as f64) * cellsize)
+    ];
+
+    // Transform all points
+    for point in &mut points {
+        proj4rs::transform::transform(&lambert93, &wgs84, point).unwrap();
+        // Convert radians to degrees
+        point.0 = point.0.to_degrees();
+        point.1 = point.1.to_degrees();
+    }
+
+    // Print results
+    println!("Origin: Longitude: {:.6}, Latitude: {:.6}", points[0].0, points[0].1);
+    println!("Top: Longitude: {:.6}, Latitude: {:.6}", points[1].0, points[1].1);
+    println!("Right: Longitude: {:.6}, Latitude: {:.6}", points[2].0, points[2].1);
+    println!("Top right: Longitude: {:.6}, Latitude: {:.6}", points[3].0, points[3].1);
+
 }
 
+#[derive(Debug)]
+struct GridParams {
+    x_begin: Option<f64>, 
+    y_begin: Option<f64>,  
+    cellsize: Option<f64>,
+    nodata: Option<f64>,
+}
 
-fn replace_nodata(grid: &Vec<Vec<f32>>) -> Vec<Vec<Option<f32>>> {
-    grid.iter()
-        .map(|row| {
-            row.iter()
-                .map(|&x| if (x + 99999.0).abs() < 0.0001 { None } else { Some(x) }) // Replace NaNs
-                .collect()
-        })
-        .collect()
+impl Default for GridParams {
+    fn default() -> Self {
+        Self {
+            x_begin: None,
+            y_begin: None,
+            cellsize: None,
+            nodata:None,
+        }
+    }
 }
 
 fn main() {
-    let file_path = Path::new("/home/ahmed/Desktop/2nd_semester/RUST_COURSE/project/data/0925_6225/LITTO3D_FRA_0925_6225_20150529_LAMB93_RGF93_IGN69/MNT1m/LITTO3D_FRA_0925_6225_MNT_20150529_LAMB93_RGF93_IGN69.asc");
-
+    let file_path = Path::new("/home/ahmed/Desktop/2nd_semester/RUST_COURSE/project/data/0925_6225/LITTO3D_FRA_0927_6223_20150529_LAMB93_RGF93_IGN69/MNT1m/LITTO3D_FRA_0927_6223_MNT_20150529_LAMB93_RGF93_IGN69.asc");
     // Initialize to None
     let mut grid: Option<Vec<Vec<f32>>> = None; 
+    let mut params = GridParams::default(); 
 
     match fs::read_to_string(file_path) {
         Ok(content) => {
-            grid = Some(get_data(content.as_str()));
+            grid = Some(get_data(content.as_str(),&mut params));
+            println!("Params: {:?}", params);
         },
         
         Err(e) => eprintln!("Failed to read data file: {}", e), // Print error to stderr
@@ -239,22 +298,27 @@ fn main() {
         // Some(image) => println!("Transformed content: {:?}", image),
         Some(grid_data) =>
         {
+            // replace the -99999 value (or any other nodata value) with None
             let transformed_grid = replace_nodata(&grid_data);
-            //  access the first row
-            // println!("Grid Sample: {:?}", transformed_grid[0]); // First row
 
-            // let img = grid_to_image(transformed_grid);
-            // img.save("greyscale.png").unwrap();
-            let img_col = grid_to_colored_image(transformed_grid);
+            let (rows, cols) = get_matrix_dimensions(&grid_data);
+            println!("Rows: {}, Columns: {}", rows, cols);  // Output: Rows: 2, Columns: 3
+            if let Some((row, col, max_val)) = find_max_position(&transformed_grid) {
+                println!("Max value {} at row {}, column {}", max_val, row, col);
+                    transform_coordinates(rows,cols,1.0);
+                }
+                // Output: Max value 4.8 at row 2, column 0
+            else {
+                println!("Grid contains no valid values");
+            }
+            
+            let img_col = grid_to_colored_image(&transformed_grid);
             img_col.save("colored.png").unwrap();
+
         }
         None => println!("No image data available."),
     }
 }
 
-
-// 1. fetch values
-// 2. transform to Grey scale points
-// 3. construct and show the image
 
 
