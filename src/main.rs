@@ -7,6 +7,14 @@ use image::RgbImage;
 use image::Rgb;
 use std::env;
 
+/// Parses the content of a grid file (ASC) and extracts the grid data and parameters.
+///
+/// # Arguments
+/// * `content` - The content of the grid file as a string.
+/// * `params` - A mutable reference to `GridParams` to store extracted parameters.
+///
+/// # Returns
+/// A 2D vector of `f32` values representing the grid data.
 fn get_data(content: &str, params: &mut GridParams) -> Vec<Vec<f32>> {
     // getting the grid parameters
     let mut lines = content.lines();
@@ -30,6 +38,13 @@ fn get_data(content: &str, params: &mut GridParams) -> Vec<Vec<f32>> {
     }).collect()
 }
 
+/// Finds the minimum value in a 2D grid.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `Option<f32>`.
+///
+/// # Returns
+/// An `Option<f32>` containing the minimum value, or `None` if the grid is empty.
 fn find_min(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
     // iterate through the matrix and get the minimum value
     grid.iter()
@@ -39,6 +54,13 @@ fn find_min(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
     
 }
 
+/// Finds the maximum value in a 2D grid.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `Option<f32>`.
+///
+/// # Returns
+/// An `Option<f32>` containing the maximum value, or `None` if the grid is empty.
 fn find_max(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
     // iterate through the matrix and get the maximum value
     grid.iter()
@@ -47,7 +69,14 @@ fn find_max(grid: &Vec<Vec<Option<f32>>>) -> Option<f32> {
         .reduce(f32::max)
 }
 
-
+/// Replaces no-data values in a grid with `None`.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `f32` values.
+/// * `nodata_val` - An optional `f32` value representing the no-data value.
+///
+/// # Returns
+/// A 2D vector of `Option<f32>` where no-data values are replaced with `None`.
 fn replace_nodata(grid: &Vec<Vec<f32>>, nodata_val:Option<f32>) -> Vec<Vec<Option<f32>>> {
     // the nodata value is passed, otherwise the default is -99999.0
     let nodata = nodata_val.unwrap_or(-99999.0);
@@ -61,6 +90,18 @@ fn replace_nodata(grid: &Vec<Vec<f32>>, nodata_val:Option<f32>) -> Vec<Vec<Optio
         .collect()
 }
 
+/// Computes the hillshade value for a specific cell in a grid.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `Option<f32>` values representing the elevation grid.
+/// * `y` - The row index of the cell.
+/// * `x` - The column index of the cell.
+/// * `cell_size` - The size of each grid cell.
+/// * `azimuth` - The azimuth angle of the light source in radians.
+/// * `altitude` - The altitude angle of the light source in radians.
+///
+/// # Returns
+/// A `f32` value representing the hillshade, ranging from 0.0 (dark) to 1.0 (bright).
 fn compute_hillshade(
     grid: &[Vec<Option<f32>>],
     y: usize,
@@ -110,7 +151,16 @@ fn compute_hillshade(
     hillshade.max(0.0).min(1.0)
 }
 
-
+/// Converts a grid of optional `f32` values into a colored image with hillshade effects.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `Option<f32>` values.
+/// * `cellsize` - An optional `f32` value representing the size of each grid cell.
+///
+/// # Returns
+/// A tuple containing two `RgbImage` objects:
+/// - The first image is the colored representation of the grid.
+/// - The second image includes additional features like dashed lines and markers.
 fn grid_to_colored_image(grid: &Vec<Vec<Option<f32>>>,cellsize:Option<f32> )->(RgbImage, RgbImage) {
     // get image dimensions
     let height = grid.len();
@@ -202,6 +252,13 @@ fn grid_to_colored_image(grid: &Vec<Vec<Option<f32>>>,cellsize:Option<f32> )->(R
     return (image,x_marked_image);
 }
 
+/// Converts a grid of `f32` values from an ASC file into a grayscale image.
+///
+/// # Arguments
+/// * `grid` - A reference to a 2D vector of `Option<f32>` values.
+///
+/// # Returns
+/// A `GrayImage` object representing the grayscale image of the grid.
 fn grid_to_image(grid: &Vec<Vec<Option<f32>>> )->GrayImage {
     // get image dimensions
     let height = grid.len();
@@ -245,6 +302,14 @@ fn grid_to_image(grid: &Vec<Vec<Option<f32>>> )->GrayImage {
     return image;
 }
 
+/// Draws a dashed line on an image following the negative gradient direction of a grid.
+///
+/// # Arguments
+/// * `image` - A mutable reference to an `RgbImage` where the line will be drawn.
+/// * `grid` - A reference to a 2D vector of `Option<f32>` values representing the grid.
+/// * `start_x` - The starting x-coordinate of the line.
+/// * `start_y` - The starting y-coordinate of the line.
+/// * `cell_size` - The size of each grid cell.
 fn draw_dashed_line(
     image: &mut RgbImage,
     grid: &[Vec<Option<f32>>],
@@ -317,6 +382,15 @@ fn draw_dashed_line(
     }
 }
 
+/// Converts HSL (Hue, Saturation, Lightness) values to RGB (Red, Green, Blue).
+///
+/// # Arguments
+/// * `h` - The hue value in degrees (0-360).
+/// * `s` - The saturation value (0.0-1.0).
+/// * `l` - The lightness value (0.0-1.0).
+///
+/// # Returns
+/// A tuple of three `u8` values representing the RGB color.
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
@@ -382,15 +456,15 @@ fn main() {
 
     // check if grid has values
     match grid {
-        // Some(image) => println!("Transformed content: {:?}", image),
         Some(grid_data) =>
         {
             // replace the -99999 value (or any other nodata value) with None
             let transformed_grid = replace_nodata(&grid_data,params.nodata);
             
-            //save the greyscale image
+            // get and save the greyscale image
             let img = grid_to_image(&transformed_grid);
             img.save("grayscale.png").unwrap();
+            // get and save the colored image and the feature image
             let (img_col,img_feature) = grid_to_colored_image(&transformed_grid,params.cellsize);
             img_col.save("colored.png").unwrap();
             img_feature.save("gradient.png").unwrap();
@@ -466,7 +540,8 @@ mod tests {
             vec![4.0, -99999.0, 6.0],
             vec![7.0, 8.0, -99999.0],
         ];
-        let replaced_grid = replace_nodata(&grid, None);
+        let params = GridParams::default();
+        let replaced_grid = replace_nodata(&grid, params.nodata);
         assert_eq!(
             replaced_grid,
             vec![
